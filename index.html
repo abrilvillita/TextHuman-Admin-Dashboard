@@ -362,7 +362,12 @@ function fmtDate(d) {
   });
 }
 
-function fmtMXN(n) { return '$' + (n || 0).toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function fmtMXN(n) { return '$' + (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); }
+function escapeHTML(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[ch]);
+}
 
 // ═══ LOGIN ═══
 async function doLogin() {
@@ -376,7 +381,7 @@ async function doLogin() {
     if (r.error) throw new Error(r.error);
     ADMIN_SECRET = sec;
     WORKER_URL   = url;
-    localStorage.setItem('th_admin', JSON.stringify({ sec, url }));
+    document.getElementById('secret-inp').value = '';
     document.getElementById('login-wrap').style.display = 'none';
     document.getElementById('main').style.display = 'block';
     loadStats();
@@ -387,19 +392,10 @@ async function doLogin() {
   }
 }
 
-function doLogout() { localStorage.removeItem('th_admin'); location.reload(); }
+function doLogout() { ADMIN_SECRET = ''; location.reload(); }
 
-// Auto-login desde localStorage (sin exponer contraseña en código)
-(function() {
-  try {
-    const s = JSON.parse(localStorage.getItem('th_admin') || '{}');
-    if (s.sec) {
-      document.getElementById('secret-inp').value = s.sec;
-      if (s.url) document.getElementById('api-url').value = s.url;
-      doLogin();
-    }
-  } catch(e) {}
-})();
+// Clear credentials saved by earlier versions. The admin secret remains in memory only.
+try { localStorage.removeItem('th_admin'); } catch(e) {}
 
 // ═══ TABS ═══
 function goTab(name, btn) {
@@ -467,12 +463,12 @@ function renderPayRow(p) {
   const fee = calcMPFee(p.amount || 0);
   const net = (p.amount || 0) - fee;
   return `<tr>
-    <td style="font-size:11px;color:#aaa">${p.email || '—'}</td>
+    <td style="font-size:11px;color:#aaa">${escapeHTML(p.email || '—')}</td>
     <td><span class="badge ${p.type === 'premium' ? 'bp' : 'by'}">${p.type === 'premium' ? '⚡ Premium' : '🔋 Accel.'}</span></td>
     <td style="font-weight:700">${fmtMXN(p.amount)}</td>
     <td class="c-yellow" style="font-size:11px">-$${fee.toFixed(0)}</td>
     <td class="c-green" style="font-weight:700">$${net.toFixed(0)}</td>
-    <td><span class="badge ${p.status === 'verified' ? 'bg' : 'by'}">${p.status || '—'}</span></td>
+    <td><span class="badge ${p.status === 'verified' ? 'bg' : 'by'}">${escapeHTML(p.status || '—')}</span></td>
     <td style="font-size:11px;color:#666">${fmtDate(p.created_at)}</td>
   </tr>`;
 }
@@ -487,7 +483,7 @@ async function loadUsers() {
     document.getElementById('user-count').textContent = `(${allUsers.length} usuarios)`;
     renderUsers(allUsers);
   } catch(e) {
-    document.getElementById('users-tbody').innerHTML = `<tr><td colspan="12" class="empty" style="color:#ef4444">Error: ${e.message}</td></tr>`;
+    document.getElementById('users-tbody').innerHTML = `<tr><td colspan="12" class="empty" style="color:#ef4444">Error: ${escapeHTML(e.message)}</td></tr>`;
   }
 }
 
@@ -509,18 +505,18 @@ function renderUsers(users) {
     const dailyLimit = isPrem
       ? `<span class="c-purple" style="font-size:11px">∞ Premium</span>`
       : `<span style="font-size:11px">
-           <span class="c-purple">📝${u.txt_left ?? 0}</span>
+           <span class="c-purple">📝${escapeHTML(u.txt_left ?? 0)}</span>
            <span class="c-dim"> / </span>
-           <span class="c-teal">📄${u.fil_left ?? 0}</span>
+           <span class="c-teal">📄${escapeHTML(u.fil_left ?? 0)}</span>
            ${anyBlocked ? ' <span class="c-yellow">⏱</span>' : ''}
          </span>`;
 
     // Aceleración
-    const accelDisplay = `<span title="${accelBought} compra(s) de aceleración">${accelLeft} <span class="c-dim">(${accelBought}💳)</span></span>`;
+    const accelDisplay = `<span title="${accelBought} compra(s) de aceleración">${escapeHTML(accelLeft)} <span class="c-dim">(${accelBought}💳)</span></span>`;
 
     return `<tr>
-      <td style="font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis">${u.name || '—'}</td>
-      <td style="font-size:11px;color:#888;max-width:160px;overflow:hidden;text-overflow:ellipsis">${u.email}</td>
+      <td style="font-weight:500;max-width:120px;overflow:hidden;text-overflow:ellipsis">${escapeHTML(u.name || '—')}</td>
+      <td style="font-size:11px;color:#888;max-width:160px;overflow:hidden;text-overflow:ellipsis">${escapeHTML(u.email)}</td>
       <td><span class="badge ${isPrem ? 'bp' : 'bf'}">${isPrem ? '⚡ Prem' : 'Gratis'}</span></td>
       <td style="font-size:11px;text-align:center">${isPrem ? `<span class="c-purple">${daysLeft}d</span>` : '—'}</td>
       <td style="text-align:center;font-weight:700">${(u.total_humanizations || 0).toLocaleString()}</td>
@@ -532,11 +528,11 @@ function renderUsers(users) {
       <td style="font-size:11px;color:#666">${fmtDate(u.last_login)}</td>
       <td>
         <div class="actions-row">
-          <button class="btn-sm btn-g" onclick="quickActivate('${u.email}',30)" title="Dar 30 días Premium">+30d</button>
+          <button class="btn-sm btn-g" data-action="activate" data-email="${escapeHTML(u.email)}" title="Dar 30 días Premium">+30d</button>
           ${anyBlocked
-            ? `<button class="btn-sm btn-y" onclick="unblockUser('${u.email}')" title="Desbloquear">🔓</button>`
+            ? `<button class="btn-sm btn-y" data-action="unblock" data-email="${escapeHTML(u.email)}" title="Desbloquear">🔓</button>`
             : ''}
-          <button class="btn-sm btn-r" onclick="quickRevoke('${u.email}')" title="Revocar Premium">✕</button>
+          <button class="btn-sm btn-r" data-action="revoke" data-email="${escapeHTML(u.email)}" title="Revocar Premium">✕</button>
         </div>
       </td>
     </tr>`;
@@ -617,13 +613,13 @@ async function loadPayments() {
           const fee = calcMPFee(p.amount || 0);
           const net = (p.amount || 0) - fee;
           return `<tr>
-            <td style="font-size:11px">${p.email || '—'}</td>
+            <td style="font-size:11px">${escapeHTML(p.email || '—')}</td>
             <td><span class="badge ${p.type === 'premium' ? 'bp' : 'by'}">${p.type === 'premium' ? '⚡ Premium' : '🔋 Aceleración'}</span></td>
             <td style="font-weight:700">${fmtMXN(p.amount)}</td>
             <td class="c-yellow" style="font-size:11px">-$${fee.toFixed(0)}</td>
             <td class="c-green" style="font-weight:700">$${net.toFixed(0)}</td>
-            <td style="font-size:11px;color:#666">${p.source || 'mercadopago'}</td>
-            <td><span class="badge ${p.status === 'verified' ? 'bg' : 'by'}">${p.status || '—'}</span></td>
+            <td style="font-size:11px;color:#666">${escapeHTML(p.source || 'mercadopago')}</td>
+            <td><span class="badge ${p.status === 'verified' ? 'bg' : 'by'}">${escapeHTML(p.status || '—')}</span></td>
             <td style="font-size:11px;color:#666">${fmtDate(p.created_at)}</td>
           </tr>`;
         }).join('')
@@ -646,7 +642,7 @@ async function loadPayments() {
       <span class="c-dim">Nota: estos son los últimos 200 pagos. Para el total exacto revisa tu panel de Mercado Pago.</span>
     `;
   } catch(e) {
-    document.getElementById('payments-tbody').innerHTML = `<tr><td colspan="8" class="empty" style="color:#ef4444">Error: ${e.message}</td></tr>`;
+    document.getElementById('payments-tbody').innerHTML = `<tr><td colspan="8" class="empty" style="color:#ef4444">Error: ${escapeHTML(e.message)}</td></tr>`;
   }
 }
 
@@ -659,18 +655,18 @@ async function loadDiscounts() {
     const codes = r.codes || [];
     document.getElementById('disc-tbody').innerHTML = codes.length
       ? codes.map(d => `<tr>
-          <td><code style="color:#a78bfa;font-size:13px">${d.code}</code></td>
-          <td style="font-size:12px">${d.description || '—'}</td>
-          <td style="text-align:center">${d.days || 30}d</td>
-          <td style="text-align:center">${d.uses_count || 0}</td>
-          <td style="text-align:center">${d.max_uses || '∞'}</td>
+          <td><code style="color:#a78bfa;font-size:13px">${escapeHTML(d.code)}</code></td>
+          <td style="font-size:12px">${escapeHTML(d.description || '—')}</td>
+          <td style="text-align:center">${escapeHTML(d.days || 30)}d</td>
+          <td style="text-align:center">${escapeHTML(d.uses_count || 0)}</td>
+          <td style="text-align:center">${escapeHTML(d.max_uses || '∞')}</td>
           <td style="font-size:11px;color:#666">${d.expires_at ? fmtDate(d.expires_at) : 'Nunca'}</td>
           <td><span class="badge ${d.active ? 'bg' : 'br'}">${d.active ? 'Activo' : 'Inactivo'}</span></td>
-          <td><button class="btn-sm ${d.active ? 'btn-r' : 'btn-g'}" onclick="toggleDiscount('${d.code}',${!d.active})">${d.active ? 'Desactivar' : 'Activar'}</button></td>
+          <td><button class="btn-sm ${d.active ? 'btn-r' : 'btn-g'}" data-action="toggle-discount" data-code="${escapeHTML(d.code)}" data-active="${!d.active}">${d.active ? 'Desactivar' : 'Activar'}</button></td>
         </tr>`).join('')
       : '<tr><td colspan="8" class="empty">Sin códigos creados</td></tr>';
   } catch(e) {
-    document.getElementById('disc-tbody').innerHTML = `<tr><td colspan="8" class="empty" style="color:#ef4444">Error: ${e.message}</td></tr>`;
+    document.getElementById('disc-tbody').innerHTML = `<tr><td colspan="8" class="empty" style="color:#ef4444">Error: ${escapeHTML(e.message)}</td></tr>`;
   }
 }
 
@@ -720,6 +716,16 @@ function sendManualEmail() {
   if (!to) { showToast('Ingresa el email destino', true); return; }
   window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_blank');
 }
+
+document.addEventListener('click', event => {
+  const button = event.target.closest('button[data-action]');
+  if (!button) return;
+  const { action, email, code, active } = button.dataset;
+  if (action === 'activate') quickActivate(email, 30);
+  if (action === 'unblock') unblockUser(email);
+  if (action === 'revoke') quickRevoke(email);
+  if (action === 'toggle-discount') toggleDiscount(code, active === 'true');
+});
 
 // ═══ UI HELPERS ═══
 function showMsg(id, txt, type) {
